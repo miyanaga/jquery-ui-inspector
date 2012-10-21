@@ -2,18 +2,20 @@
 $.widget 'ui.inspector',
     options:
         # proxyUrl: ''   # required
-        blockTransition: true
-        blockTransitionMessage: 'If you move from this page but please stay because inspection will be disabled.'
-        blanlUrl: 'about:blank'
         proxyUrlParam: 'url'
+        blankUrl: 'about:blank'
         hoverId: '-inspector-hover'
         hoverStyle: 'background-color:red;opacity:0.3;'
         highlightClass: '-inspector-highlight'
-        highlightStyle: 'border:2px solid #f00 !important;opacity:0.3'
+        highlightStyle: 'border:2px solid #f00 !important;opacity:0.3;'
+        blockTransition: true
+        blockTransitionMessage: 'If you move from this page but please stay because inspection will be disabled.'
+        clickable: 'a, input, button, area, select, textarea'
+        cancelingDelay: 500
         # onBeforeLoad: function(url) {}
         # onAfterLoad: function(url) {}
-        # onHover:
-        # onPick:
+        # onHover: function(element) {}
+        # onPick: function(element) {}
 
         # Selector builder
         selectorBuilder: (el) ->
@@ -83,12 +85,6 @@ $.widget 'ui.inspector',
         @highlight_on_load = null
         @picking = false
 
-        $(window).bind 'beforeunload', (ev) =>
-            if @transitionBlocker?
-                blocker = @transitionBlocker
-                @$iframe.each ->
-                    $(@contentWindow).unbind 'beforeunload', blocker
-
         # Load handler
         @$iframe.load =>
             # Status
@@ -101,9 +97,7 @@ $.widget 'ui.inspector',
             @$body = @$doc.find 'body'
 
             # Disable clickable
-            @$body.find('*').click (ev) =>
-                console.log 'click'
-                console.log @picking
+            @$body.find(@options.clickable).click (ev) =>
                 if @picking is true
                     ev.stopPropagation()
                     ev.preventDefault()
@@ -113,11 +107,13 @@ $.widget 'ui.inspector',
 
             # Block transition
             if @options.blockTransition is true
-                blocker = @transitionBlocker = (ev) =>
-                    if @inFrame?
-                    ev.returnValue = @options.blockTransitionMessage
+                self = @
                 @$iframe.each ->
-                    $(@contentWindow).bind 'beforeunload', blocker
+                    $(@contentWindow).unbind('beforeunload')
+                    .bind 'beforeunload', (ev) ->
+                        return undefined if @document.hasFocus() isnt true or self.inFrame isnt true
+                        ev.returnValue = self.options.blockTransitionMessage
+
 
             # Hover element
             @$hover = $("<div id='#{@options.hoverId}' />")
@@ -133,7 +129,16 @@ $.widget 'ui.inspector',
                     height: '0px'
                     'z-index': 99999
                     'pointer-events': 'none'
-            @$body.append @$hover
+
+            # Hover visibility
+            @$iframe.bind 'mouseenter', =>
+                @inFrame = true
+                if @picking is true
+                    @$hover.show()
+            .bind 'mouseout', =>
+                @inFrame = false
+                if @picking is true
+                    @$hover.hide()
 
             # Highlight style definition
             $highlight = $("<style type='text/css'> .#{@options.highlightClass} { #{@options.highlightStyle} } </style>")
@@ -191,13 +196,7 @@ $.widget 'ui.inspector',
             @pick_on_load = true
             return
 
-        # Hover visibility
-        @$iframe.bind 'mouseenter', =>
-            @inFrame = true
-            @$hover.show()
-        .bind 'mouseout', =>
-            @inFrame = false
-            @$hover.hide()
+        @$body.append @$hover
 
         # Hovering and picking
         @$body.bind 'mousemove', (ev) =>
@@ -210,8 +209,11 @@ $.widget 'ui.inspector',
             # Callback onHover
             if @options.onHover?
                 @options.onHover.call @, @hovering
-        .bind 'mouseup', (ev) =>
 
+            ev.preventDefault()
+            ev.stopPropagation()
+            false
+        .bind 'mouseup', (ev) =>
             # Callback onPick
             cb = onPick or @options.onPick
             if cb?
@@ -220,8 +222,15 @@ $.widget 'ui.inspector',
             # Continue to pick?
             if not continues?
                 # Reset events and hide hover
-                @cancelPicking()
+                # FIXME: 'click' event will be fired after mouse events so canceling delayed.
+                setTimeout =>
+                    @cancelPicking()
+                , @options.cancelingDelay
 
+            ev.preventDefault()
+            ev.stopPropagation()
+            false
+        .bind 'mousedown', (ev) =>
             ev.preventDefault()
             ev.stopPropagation()
             false
@@ -234,25 +243,23 @@ $.widget 'ui.inspector',
 
         # Remove events and hover
         if @clickBlocker?
-            console.log 'unblock click'
-            @$body.find('*').unbind 'click', @clickBlocker
+            @$body.find(@options.clickable).unbind 'click', @clickBlocker
         @clickBlocker = null
-        # @$iframe.unbind 'mouseenter mouseout'
-        @$body.unbind 'mousemove mouseup'
+        @$body.unbind 'mousemove mouseup mousedown'
         @$hover.hide()
         @picking = false
+        @
 
-    highlight: (selector, reset) ->
+    highlight: (selector, addition) ->
         # If not loaded, reserve to highlight
         if @loaded isnt true
             @highlight_on_load = selector
 
         # Reset highlight if needed
-        @resetHighlight() if reset is true
+        @resetHighlight() if addition isnt true
 
         # Add highlight class to elements
         @$doc.find(selector).addClass @options.highlightClass
-
         @
 
     resetHighlight: ->
@@ -261,5 +268,4 @@ $.widget 'ui.inspector',
         # Remove highlight class from current
         @$doc.find(".#{@options.highlightClass}")
             .removeClass @options.highlightClass
-
         @

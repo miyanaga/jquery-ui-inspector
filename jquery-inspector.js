@@ -3,14 +3,16 @@
 
   $.widget('ui.inspector', {
     options: {
-      blockTransition: true,
-      blockTransitionMessage: 'If you move from this page but please stay because inspection will be disabled.',
-      blanlUrl: 'about:blank',
       proxyUrlParam: 'url',
+      blankUrl: 'about:blank',
       hoverId: '-inspector-hover',
       hoverStyle: 'background-color:red;opacity:0.3;',
       highlightClass: '-inspector-highlight',
-      highlightStyle: 'border:2px solid #f00 !important;opacity:0.3',
+      highlightStyle: 'border:2px solid #f00 !important;opacity:0.3;',
+      blockTransition: true,
+      blockTransitionMessage: 'If you move from this page but please stay because inspection will be disabled.',
+      clickable: 'a, input, button, area, select, textarea',
+      cancelingDelay: 500,
       selectorBuilder: function(el) {
         var $body, $el, by_id, sel, tag,
           _this = this;
@@ -74,26 +76,14 @@
       this.pick_on_load = false;
       this.highlight_on_load = null;
       this.picking = false;
-      $(window).bind('beforeunload', function(ev) {
-        var blocker;
-        alert('parent');
-        if (_this.transitionBlocker != null) {
-          blocker = _this.transitionBlocker;
-          return _this.$iframe.each(function() {
-            return $(this.contentWindow).unbind('beforeunload', blocker);
-          });
-        }
-      });
       return this.$iframe.load(function() {
-        var $highlight, blocker;
+        var $highlight, self;
         _this.loding = false;
         _this.loaded = true;
         _this.$doc = _this.$iframe.contents();
         _this.doc = _this.$doc[0];
         _this.$body = _this.$doc.find('body');
-        _this.$body.find('*').click(function(ev) {
-          console.log('click');
-          console.log(_this.picking);
+        _this.$body.find(_this.options.clickable).click(function(ev) {
           if (_this.picking === true) {
             ev.stopPropagation();
             ev.preventDefault();
@@ -103,12 +93,14 @@
           }
         });
         if (_this.options.blockTransition === true) {
-          blocker = _this.transitionBlocker = function(ev) {
-            alert('child');
-            return ev.returnValue = _this.options.blockTransitionMessage;
-          };
+          self = _this;
           _this.$iframe.each(function() {
-            return $(this.contentWindow).bind('beforeunload', blocker);
+            return $(this.contentWindow).unbind('beforeunload').bind('beforeunload', function(ev) {
+              if (this.document.hasFocus() !== true || self.inFrame !== true) {
+                return;
+              }
+              return ev.returnValue = self.options.blockTransitionMessage;
+            });
           });
         }
         _this.$hover = $("<div id='" + _this.options.hoverId + "' />").hide().attr('style', _this.options.hoverStyle).attr('pointer-events', 'none').css({
@@ -121,7 +113,17 @@
           'z-index': 99999,
           'pointer-events': 'none'
         });
-        _this.$body.append(_this.$hover);
+        _this.$iframe.bind('mouseenter', function() {
+          _this.inFrame = true;
+          if (_this.picking === true) {
+            return _this.$hover.show();
+          }
+        }).bind('mouseout', function() {
+          _this.inFrame = false;
+          if (_this.picking === true) {
+            return _this.$hover.hide();
+          }
+        });
         $highlight = $("<style type='text/css'> ." + _this.options.highlightClass + " { " + _this.options.highlightStyle + " } </style>");
         _this.$body.append($highlight);
         if (_this.options.onAfterLoad != null) {
@@ -166,18 +168,17 @@
         this.pick_on_load = true;
         return;
       }
-      this.$iframe.bind('mouseenter', function() {
-        return _this.$hover.show();
-      }).bind('mouseout', function() {
-        return _this.$hover.hide();
-      });
+      this.$body.append(this.$hover);
       this.$body.bind('mousemove', function(ev) {
         _this.hovering = _this.doc.elementFromPoint(ev.clientX, ev.clientY);
         _this.$hovering = $(_this.hovering);
         _this.$hover.offset(_this.$hovering.offset()).width(_this.$hovering.width()).height(_this.$hovering.height());
         if (_this.options.onHover != null) {
-          return _this.options.onHover.call(_this, _this.hovering);
+          _this.options.onHover.call(_this, _this.hovering);
         }
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
       }).bind('mouseup', function(ev) {
         var cb;
         cb = onPick || _this.options.onPick;
@@ -185,8 +186,14 @@
           cb.call(_this, _this.hovering, _this.selector);
         }
         if (!(continues != null)) {
-          _this.cancelPicking();
+          setTimeout(function() {
+            return _this.cancelPicking();
+          }, _this.options.cancelingDelay);
         }
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
+      }).bind('mousedown', function(ev) {
         ev.preventDefault();
         ev.stopPropagation();
         return false;
@@ -199,20 +206,19 @@
         return;
       }
       if (this.clickBlocker != null) {
-        console.log('unblock click');
-        this.$body.find('*').unbind('click', this.clickBlocker);
+        this.$body.find(this.options.clickable).unbind('click', this.clickBlocker);
       }
       this.clickBlocker = null;
-      this.$iframe.unbind('mouseenter mouseout');
-      this.$body.unbind('mousemove mouseup');
+      this.$body.unbind('mousemove mouseup mousedown');
       this.$hover.hide();
-      return this.picking = false;
+      this.picking = false;
+      return this;
     },
-    highlight: function(selector, reset) {
+    highlight: function(selector, addition) {
       if (this.loaded !== true) {
         this.highlight_on_load = selector;
       }
-      if (reset === true) {
+      if (addition !== true) {
         this.resetHighlight();
       }
       this.$doc.find(selector).addClass(this.options.highlightClass);

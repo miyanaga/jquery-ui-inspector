@@ -24,13 +24,15 @@
         <script src="../jquery-inspector.js"></script>
         <script>
             jQuery(function($) {
+                // View model
                 var model = {
-                    url: ko.observable('http://www.livedoor.co.jp/'),
+                    url: ko.observable(''),
                     hovering: ko.observable(''),
                     selector: ko.observable(''),
                     loading: ko.observable(false),
                 };
 
+                // Setup inspector
                 var $iframe = $('#subframe');
                 $iframe.inspector({
                     proxyUrl: 'proxy.php',
@@ -43,11 +45,12 @@
                     onHover: function(hovering) {
                         model.hovering($iframe.inspector('selectorPath', hovering, ' > '));
                     },
-                    onPick: function(hovering) {
-                        model.selector($iframe.inspector('selectorPath', hovering));
+                    onPick: function(picked) {
+                        model.selector($iframe.inspector('selectorPath', picked));
                     }
                 });
 
+                // Loading
                 model.load = function() {
                     if ( model.url() )
                         $iframe.inspector('load', this.url()).inspector('pick');
@@ -55,22 +58,22 @@
                         alert('Enter URL');
                 };
 
+                // Picking
                 model.pick = function() {
                     $iframe.inspector('pick');
                 };
 
+                // Feeback highlight
                 model.selector.subscribe(function(selector) {
-                    $iframe.inspector('highlight', selector, true);
+                    $iframe.inspector('highlight', selector);
                 });
 
+                // Apply view model
                 ko.applyBindings(model);
 
+                // Load url if defined
                 if ( model.url() )
                     model.load();
-
-                $('iframe').bind('beforeunload', function(ev) {
-                    return ev.returnValue = 'OK?';
-                });
             });
         </script>
     </body>
